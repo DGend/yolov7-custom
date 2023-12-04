@@ -1,0 +1,9 @@
+
+train: ./data/feed_label/train
+val: ./data/feed_label/val
+
+# number of classes
+nc: 1
+
+# class names
+names: ['fish']
