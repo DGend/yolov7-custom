@@ -34,7 +34,7 @@ data/images/*
 !data/images/zidane.jpg
 !data/images/bus.jpg
 !data/*.sh
-
+!data/feed_label
 results*.csv
 
 # Datasets -------------------------------------------------------------------------------------------------------------
@@ -54,7 +54,6 @@ val2017.zip
 
 # Neural Network weights -----------------------------------------------------------------------------------------------
 *.weights
-*.pt
 *.pb
 *.onnx
 *.engine
