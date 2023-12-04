@@ -14,11 +14,11 @@ Implementation of paper - [YOLOv7: Trainable bag-of-freebies sets new state-of-t
 
 Custom training 수행방법
 
-Step 1. 학습 이미지 저장 경로('yolov7-custom/data/feed_label/train/images')에 신규 학습용 이미지 데이터 복사\n
+Step 1. 학습 이미지 저장 경로('yolov7-custom/data/feed_label/train/images')에 신규 학습용 이미지 데이터 복사
 
-Step 2. 학습 라벨링 저장 경로('yolov7-custom/data/feed_label/train/labels')에 신규 학습용 이미지 데이터의 라벨 파일을 복사\n
+Step 2. 학습 라벨링 저장 경로('yolov7-custom/data/feed_label/train/labels')에 신규 학습용 이미지 데이터의 라벨 파일을 복사
 
-Step 3. 다음 명령어 실행\n
+Step 3. 다음 명령어 실행
 
 ``` shell
 bash python train.py --workers 1 --device 0 --batch-size 8 --epochs 100 --img 640 640 --data data/fish.yaml --hyp data/hyp.scratch.custom.yaml --cfg cfg/training/yolov7-fish.yaml --name yolov7-custom --weights yolov7.pt
@@ -27,9 +27,11 @@ bash python train.py --workers 1 --device 0 --batch-size 8 --epochs 100 --img 64
 ## Testing
 
 Custom test 수행방법
-Step 1. 검증 이미지 저장 경로('yolov7-custom/data/feed_label/val/images')에 학습용 이미지로 사용되지 않은 데이터를 복사\n
-Step 2. 검증 라벨링 저장 경로('yolov7-custom/data/feed_label/val/labels')에 학습용 이미지로 사용되지 않은 데이터를 복사\n
-Step 3. 다음 명령어 실행\n
+Step 1. 검증 이미지 저장 경로('yolov7-custom/data/feed_label/val/images')에 학습용 이미지로 사용되지 않은 데이터를 복사/n
+
+Step 2. 검증 라벨링 저장 경로('yolov7-custom/data/feed_label/val/labels')에 학습용 이미지로 사용되지 않은 데이터를 복사/n
+
+Step 3. 다음 명령어 실행/n
 
 ``` shell
 # 파일 단위 실행
