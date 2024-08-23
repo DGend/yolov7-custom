@@ -155,7 +155,7 @@ def detect(save_img=False):
 
 
                 if opt.track:
-  
+                    
                     tracked_dets = sort_tracker.update(dets_to_sort, opt.unique_track_color)
                     tracks =sort_tracker.getTrackers()
 
@@ -169,7 +169,7 @@ def detect(save_img=False):
                         if opt.show_track:
                             #loop over tracks
                             for t, track in enumerate(tracks):
-                  
+                                
                                 track_color = colors[int(track.detclass)] if not opt.unique_track_color else sort_tracker.color_list[t]
 
                                 [cv2.line(im0, (int(track.centroidarr[i][0]),

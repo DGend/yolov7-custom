@@ -1,3 +1,8 @@
+"""
+- 사용방법 예시
+python detect.py --weights yolov7_fish.pt --conf 0.5 --img-size 640 --source 1.jpg --view-img --no-trace
+"""
+
 import argparse
 import time
 from pathlib import Path
