@@ -17,6 +17,10 @@ from utils.torch_utils import select_device, load_classifier, time_synchronized,
 
 from sort import *
 
+import pandas as pd
+from matplotlib.animation import FuncAnimation
+
+fig, ax = plt.subplots()
 
 """Function to Draw Bounding boxes"""
 def draw_boxes(img, bbox, identities=None, categories=None, confidences = None, names=None, colors = None):
@@ -157,7 +161,7 @@ def detect(save_img=False):
                 if opt.track:
                     
                     tracked_dets = sort_tracker.update(dets_to_sort, opt.unique_track_color)
-                    tracks =sort_tracker.getTrackers()
+                    tracks = sort_tracker.getTrackers()
 
                     # draw boxes for visualization
                     if len(tracked_dets)>0:
@@ -186,11 +190,15 @@ def detect(save_img=False):
                     confidences = dets_to_sort[:, 4]
                 
                 im0 = draw_boxes(im0, bbox_xyxy, identities, categories, confidences, names, colors)
+                
+                moves = get_track_length(identities, tracks)
+                
+                df = pd.DataFrame(moves.items(), columns=['ID', 'Length'])
+                
+                print(f'moves: {df["Length"]}')
+                
+                draw_fig_plot(df)
 
-                
-                    
-                
-                
             # Print time (inference + NMS)
             print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
 
@@ -230,8 +238,7 @@ def detect(save_img=False):
 
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
-        #print(f"Results saved to {save_dir}{s}")
-
+        
     print(f'Done. ({time.time() - t0:.3f}s)')
 
 def count_num_fish(bbox_xyxy):
@@ -249,13 +256,41 @@ def get_track_length(identities, tracks):
     
     return infos
 
+def draw_fig_plot(data):
+    global fig, ax
+    fig, ax = plt.subplots()
+    
+    # 그래프 그리기
+    plt.plot(data, label='data')
+    
+    plt.show()
+
+def init_video_plot():
+    global fig, ax
+    # 그래프 초기화
+    fig, ax = plt.subplots()
+    line, = ax.plot([], [])
+    
+    return line
+
+def update(df, line):
+    line.set_ydata(len(df))
+    return line
+
+def update_video_plot(data):
+    global fig, ax
+    
+    # 애니메이션 객체 생성
+    ani = FuncAnimation(fig, update, frames=np.arange(0, 100), blit=True)
+    
+    plt.show()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default='yolov7.pt', help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='inference/images', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--weights', nargs='+', type=str, default='halibut_0.pt', help='model.pt path(s)')
+    parser.add_argument('--source', type=str, default='data/data/Infrared/test', help='source')  # file/folder, 0 for webcam
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', action='store_true', help='display results')
@@ -271,8 +306,8 @@ if __name__ == '__main__':
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--no-trace', action='store_true', help='don`t trace model')
 
-    parser.add_argument('--track', action='store_true', help='run tracking')
-    parser.add_argument('--show-track', action='store_true', help='show tracked path')
+    parser.add_argument('--track', default=True, help='run tracking')
+    parser.add_argument('--show-track', default=True, help='show tracked path')
     parser.add_argument('--show-fps', action='store_true', help='show fps')
     parser.add_argument('--thickness', type=int, default=5, help='bounding box and font size thickness')
     parser.add_argument('--seed', type=int, default=1, help='random seed to control bbox colors')
@@ -287,7 +322,7 @@ if __name__ == '__main__':
 
     sort_tracker = Sort(max_age=5,
                        min_hits=2,
-                       iou_threshold=0.2) 
+                       iou_threshold=0.2)
 
     #check_requirements(exclude=('pycocotools', 'thop'))
 

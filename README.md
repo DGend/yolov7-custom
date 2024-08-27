@@ -21,7 +21,7 @@ Step 2. 학습 라벨링 저장 경로('yolov7-custom/data/feed_label/train/labe
 Step 3. 다음 명령어 실행
 
 ``` shell
-bash python train.py --workers 1 --device 0 --batch-size 8 --epochs 100 --img 640 640 --data data/fish.yaml --hyp data/hyp.scratch.custom.yaml --cfg cfg/training/yolov7-fish.yaml --name yolov7-custom --weights yolov7.pt
+python train.py --workers 1 --device 0 --batch-size 32 --epochs 300 --img 640 640 --data data/fish.yaml --hyp data/hyp.scratch.custom.yaml --cfg cfg/training/yolov7-fish.yaml --weights yolov7.pt --name yolov7-halibut
 ```
 
 ## Testing
@@ -40,3 +40,11 @@ python detect.py --weights yolov7_fish.pt --conf 0.5 --img-size 640 --source yol
 # 폴더 단위 실행
 python detect.py --weights yolov7_fish.pt --conf 0.5 --img-size 640 --source yolov7-custom/data/feed_label/val --view-img --no-trace
 ```
+
+
+## Label변환
+
+글로비트에서 제공하는 라벨은 .json으로 학습을 위해서는 형태를 변경해야한다. 따라서 다음 명령어를 통해 학습이 가능한 .txt로 변환
+
+``` shell
+python labelFile_json_to_txt.py
