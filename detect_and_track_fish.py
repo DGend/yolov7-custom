@@ -361,6 +361,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--save_log_data', default='./log_data.pickle', help='save log data to pickle file')
 
+    parser.add_argument('--use_live_camera', default=False, help='use live camera') # 웹캠 사용 여부
+
     opt = parser.parse_args()
     print(opt)
     np.random.seed(opt.seed)
