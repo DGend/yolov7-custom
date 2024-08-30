@@ -19,6 +19,8 @@ from sort import *
 
 import pandas as pd
 from matplotlib.animation import FuncAnimation
+import datetime
+import pickle
 
 fig, ax = plt.subplots()
 
@@ -45,16 +47,21 @@ def draw_boxes(img, bbox, identities=None, categories=None, confidences = None, 
             cv2.rectangle(img, (x1, y1), c2, color, -1, cv2.LINE_AA)  # filled
             cv2.putText(img, label, (x1, y1 - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
 
-
     return img
 
 
-def detect(save_img=False):
+def detect(save_img=False, frame=30, save_interval_minite=2):
     source, weights, view_img, save_txt, imgsz, trace = opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, not opt.no_trace
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://', 'https://'))
     save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
+    
+    df = pd.DataFrame(columns=['ID', 'Length', 'creation_time'])
+    
+    frame_id = 0
+    save_interval = save_interval_minite * frame * 60 # 분 단위로 저장할 프레임 간격 설정
+    
     if not opt.nosave:  
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
@@ -191,13 +198,29 @@ def detect(save_img=False):
                 
                 im0 = draw_boxes(im0, bbox_xyxy, identities, categories, confidences, names, colors)
                 
-                moves = get_track_length(identities, tracks)
+                moves = get_track_length(tracks)
                 
-                df = pd.DataFrame(moves.items(), columns=['ID', 'Length'])
+                if df.empty:
+                    df = pd.DataFrame(moves, columns=['ID', 'Length', 'creation_time'])
+                else:
+                    df = pd.concat([df, pd.DataFrame(moves, columns=['ID', 'Length', 'creation_time'])])
                 
-                print(f'moves: {df["Length"]}')
+                # 설정된 인터벌마다 DataFrame을 저장하고 새로운 DataFrame 시작
+                if frame_id % save_interval == 0:
+                    # file_name = datetime.now().strftime('data_%y%m%d_%H%M%S.pkl')  # 파일명 형식 변경
+                    file_path = os.path.splitext(save_path)[0] + datetime.datetime.now().strftime('data_%y%m%d_%H%M.pkl')
+                    # with open(file_path, 'wb') as file:
+                    #     pickle.dump(df, file)
+                    
+                    save_log_data_ver2(df, file_path)
+                    
+                    # 초기화
+                    df = pd.DataFrame(columns=['ID', 'Length', 'creation_time'])
+                    frame_id = 0
+
+                frame_id += 1
                 
-                draw_fig_plot(df)
+                # draw_fig_plot(df)
 
             # Print time (inference + NMS)
             print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
@@ -235,35 +258,52 @@ def detect(save_img=False):
                             save_path += '.mp4'
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                     vid_writer.write(im0)
-
+        
+        # 마지막으로 남은 데이터 저장
+        file_path = os.path.splitext(save_path)[0] + datetime.datetime.now().strftime('data_%y%m%d_%H%M.pkl')
+        save_log_data_ver2(df, file_path)
+        
+        # with open(file_path, 'wb') as file:
+        #     pickle.dump(df, file)
+        
+        # 로그 데이터 저장용
+        # save_log_data(df, save_path)
+        
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         
     print(f'Done. ({time.time() - t0:.3f}s)')
 
+def save_log_data_ver2(df, save_path):
+    grouped = df.groupby('creation_time').agg({'ID': list, 'Length': list}).reset_index()
+    
+    # Open the file in binary mode and save the 'grouped' object as a pickle
+    with open(save_path, 'wb') as file:
+        pickle.dump(grouped, file)
+    
+# def save_log_data(df, save_path):
+#     grouped = df.groupby('creation_time').agg({'ID': list, 'Length': list}).reset_index()
+    
+#     # Specify the file path where you want to save the pickle file
+#     file_path = os.path.splitext(save_path)[0] + '_log_data.pickle'
+
+#     # Open the file in binary mode and save the 'grouped' object as a pickle
+#     with open(file_path, 'wb') as file:
+#         pickle.dump(grouped, file)
+
 def count_num_fish(bbox_xyxy):
     # 현 프레임에서 탐지된 물고기 수 반환
     return len(bbox_xyxy)
 
-def get_track_length(identities, tracks):
-    infos = {}
+def get_track_length(tracks):
+    infos = []
     
-    for id in identities:
-        id = int(id) - 1 # id시작을 0부터 시작하도록 조정
+    for track in tracks:
+        length = len(track.centroidarr)
+        infos.append({'ID': track.id, 'Length': length, 'creation_time': datetime.datetime.now()})
         
-        length = len(tracks[id].centroidarr)
-        infos[id] = length
-    
     return infos
 
-def draw_fig_plot(data):
-    global fig, ax
-    fig, ax = plt.subplots()
-    
-    # 그래프 그리기
-    plt.plot(data, label='data')
-    
-    plt.show()
 
 def init_video_plot():
     global fig, ax
@@ -287,17 +327,21 @@ def update_video_plot(data):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default='halibut_0.pt', help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='data/data/Infrared/test', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--weights', nargs='+', type=str, default='halibut_ver2.pt', help='model.pt path(s)')
+    
+    # parser.add_argument('--source', type=str, default='data/data/Infrared/test', help='source')  # file/folder, 0 for webcam
+    # parser.add_argument('--source', type=str, default='data/data/Infrared/feed_summery.mp4', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--source', type=str, default='data/data/Infrared/feed_summery_20sec.mp4', help='source')  # file/folder, 0 for webcam
+    
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--view-img', action='store_true', help='display results')
+    parser.add_argument('--view-img', type=bool, default=False, help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--nosave', action='store_true', help='do not save images/videos')
-    parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
+    parser.add_argument('--classes', type=int, nargs='+', help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--update', action='store_true', help='update all models')
@@ -315,14 +359,17 @@ if __name__ == '__main__':
     parser.add_argument('--nolabel', action='store_true', help='don`t show label')
     parser.add_argument('--unique-track-color', action='store_true', help='show each track in unique color')
 
+    parser.add_argument('--save_log_data', default='./log_data.pickle', help='save log data to pickle file')
 
     opt = parser.parse_args()
     print(opt)
     np.random.seed(opt.seed)
 
-    sort_tracker = Sort(max_age=5,
-                       min_hits=2,
-                       iou_threshold=0.2)
+    sort_tracker = Sort(max_age=5, # 오브젝트가 사라지기 전까지의 저장할 프레임 수
+                       min_hits=2, # 오브젝트를 추적하기 위한 최소 히트 수
+                       iou_threshold=0.2, # 탐지된 물체가 같은 물체인지 판단하는 IOU 임계값
+                       max_id=300 # 오브젝트를 동시에 추적할 수 있는 최대 ID 수
+                    )
 
     #check_requirements(exclude=('pycocotools', 'thop'))
 

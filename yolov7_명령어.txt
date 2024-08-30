@@ -1,5 +1,5 @@
 # 학습
-python train.py --workers 1 --device 0 --batch-size 8 --epochs 100 --img 640 640 --data data/fish.yaml --hyp data/hyp.scratch.custom.yaml --cfg cfg/training/yolov7-fish.yaml --name yolov7-custom --weights yolov7.pt
+python train.py --workers 1 --device 0 --batch-size 32 --epochs 100 --img 640 640 --data data/fish.yaml --hyp data/hyp.scratch.custom.yaml --cfg cfg/training/yolov7-fish.yaml --name yolov7-custom --weights yolov7.pt
 
 
 # 테스트
@@ -10,7 +10,11 @@ python detect_or_track.py --weights yolov7_fish.pt --conf 0.5 --img-size 640 --s
 
 # 타켓
 python detect.py --weights halibut.pt --conf 0.5 --img-size 640 --source data/data/Infrared/feed_summery.mp4 --view-img True --no-trace --source data\data\Infrared\feed_summery.mp4
-python detect_or_track.py --weights halibut_0.pt --conf 0.5 --img-size 640 --source data/data/Infrared/feed_summery.mp4 --view-img --track --show-track
+python detect_or_track.py --weights halibut_ver1.pt --conf 0.5 --img-size 640 --source data/data/Infrared/feed_summery.mp4 --view-img --track --show-track
 
 
-python detect_or_track.py --weights halibut_0.pt --conf 0.5 --img-size 640 --source data/data/Infrared/test --view-img --track --show-track
+python detect_or_track.py --weights halibut_ver1.pt --conf 0.5 --img-size 640 --source data/data/Infrared/test --view-img --track --show-track
+
+python detect_and_track_fish.py --weights halibut_ver2.pt --conf 0.5 --img-size 640 --source data/data/Infrared/feed_original.mp4 --view-img False
+
+python detect_and_track_fish.py --weights halibut_ver2.pt --conf 0.5 --img-size 640 --source data/data/Infrared/feed_original.mp4 --view-img False

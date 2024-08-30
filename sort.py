@@ -75,6 +75,8 @@ def convert_x_to_bbox(x, score=None):
 class KalmanBoxTracker(object):
     
     count = 0
+    max_id = 100  # 기본값 설정, 필요시 수정 가능
+    
     def __init__(self, bbox):
         """
         Initialize a tracker using initial bounding box
@@ -94,7 +96,10 @@ class KalmanBoxTracker(object):
         self.kf.x[:4] = convert_bbox_to_z(bbox) # STATE VECTOR
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
-        KalmanBoxTracker.count += 1
+        
+        # KalmanBoxTracker.count += 1
+        KalmanBoxTracker.count = (KalmanBoxTracker.count + 1) % KalmanBoxTracker.max_id  # 순환 ID 할당
+        
         self.history = []
         self.hits = 0
         self.hit_streak = 0
@@ -103,7 +108,6 @@ class KalmanBoxTracker(object):
         CX = (bbox[0]+bbox[2])//2
         CY = (bbox[1]+bbox[3])//2
         self.centroidarr.append((CX,CY))
-        
         
         #keep yolov5 detected class information
         self.detclass = bbox[5]
@@ -210,18 +214,23 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold = 0.3):
     
 
 class Sort(object):
-    def __init__(self, max_age=1, min_hits=3, iou_threshold=0.3):
+    def __init__(self, max_age=1, min_hits=3, iou_threshold=0.3, max_id=100):
         """
-        Parameters for SORT
+        SORT에 대한 매개변수
+        
+        max_age: 트래커가 업데이트 없이 유지되는 최대 프레임 수
+        min_hits: 트래커가 유효하다고 간주되기 위해 필요한 최소 매치 수
+        iou_threshold: 트래커와 감지 사이의 IoU (Intersection over Union) 임계값
+        max_id: 트래커에 할당되는 고유 ID의 최대 값
         """
         self.max_age = max_age
         self.min_hits = min_hits
         self.iou_threshold = iou_threshold
-        self.trackers = []
-        self.frame_count = 0
-        self.color_list = []
+        self.trackers = []  # 활성 트래커를 저장하는 리스트
+        self.frame_count = 0  # 처리된 프레임 수를 추적하는 카운터
+        self.color_list = []  # 각 트래커에 할당된 색상을 저장하는 리스트
         
-
+        KalmanBoxTracker.max_id = max_id  # KalmanBoxTracker 클래스에서 트래커에 할당되는 고유 ID의 최대 값 설정
  
     def getTrackers(self,):
         return self.trackers
@@ -244,7 +253,7 @@ class Sort(object):
         to_del = []
         ret = []
         for t, trk in enumerate(trks):
-           
+            
             pos = self.trackers[t].predict()[0]
             trk[:] = [pos[0], pos[1], pos[2], pos[3], 0, 0]
             if np.any(np.isnan(pos)):
@@ -271,8 +280,13 @@ class Sort(object):
         i = len(self.trackers)
         for trk in reversed(self.trackers):
             d = trk.get_state()[0]
+            
+            # 만약 trk의 time_since_update가 1보다 작고, trk의 hit_streak가 self.min_hits보다 크거나 frame_count가 self.min_hits보다 작거나 같으면
             if (trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
-                ret.append(np.concatenate((d, [trk.id+1])).reshape(1,-1)) #+1'd because MOT benchmark requires positive value
+                _id = trk.id+1
+                ret.append(np.concatenate((d, [_id])).reshape(1,-1)) #+1'd because MOT benchmark requires positive value
+            # else:
+            #     print(f"(trk.time_since_update < 1): {(trk.time_since_update < 1)} AND (trk.hit_streak >= self.min_hits: {trk.hit_streak >= self.min_hits} OR self.frame_count <= self.min_hits: {self.frame_count <= self.min_hits})")
             i -= 1
             #remove dead tracklet
             if(trk.time_since_update >self.max_age):
