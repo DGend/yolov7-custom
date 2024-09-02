@@ -34,10 +34,10 @@ def draw_boxes(img, bbox, identities=None, categories=None, confidences = None, 
         id = int(identities[i]) if identities is not None else 0
         # conf = confidences[i] if confidences is not None else 0
 
-        color = colors[cat]
+        color = colors[cat] if colors else None
         
         if not opt.nobbox:
-            cv2.rectangle(img, (x1, y1), (x2, y2), color, tl)
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, tl) # type: ignore
 
         if not opt.nolabel:
             label = str(id) + ":"+ names[cat] if identities is not None else  f'{names[cat]} {confidences[i]:.2f}'
@@ -67,6 +67,8 @@ def detect(save_img=False, frame=30, save_interval_minite=2):
 
     # Initialize
     set_logging()
+    
+    # select cpu or cuda
     device = select_device(opt.device)
     half = device.type != 'cpu'  # half precision only supported on CUDA
 
@@ -361,7 +363,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--save_log_data', default='./log_data.pickle', help='save log data to pickle file')
 
-    parser.add_argument('--use_live_camera', default=False, help='use live camera') # 웹캠 사용 여부
+    # TODO: 웹캠 사용 여부를 입력받아서 사용할 수 있도록 수정
+    # parser.add_argument('--use_live_camera', default=False, help='use live camera') # 웹캠 사용 여부
 
     opt = parser.parse_args()
     print(opt)
