@@ -21,6 +21,7 @@ import pandas as pd
 from matplotlib.animation import FuncAnimation
 import datetime
 import pickle
+import datetime
 
 fig, ax = plt.subplots()
 
@@ -50,11 +51,186 @@ def draw_boxes(img, bbox, identities=None, categories=None, confidences = None, 
     return img
 
 
-def detect(save_img=False, frame=30, save_interval_minite=2):
+def detect(frame=30, save_interval_minite=2):
+    def run_image_and_video():
+        for path, img, im0s, vid_cap in dataset:
+            img = torch.from_numpy(img).to(device)
+            img = img.half() if half else img.float()  # uint8 to fp16/32
+            img /= 255.0  # 0 - 255 to 0.0 - 1.0
+            if img.ndimension() == 3:
+                img = img.unsqueeze(0)
+
+            # Warmup
+            if device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
+                old_img_b = img.shape[0]
+                old_img_h = img.shape[2]
+                old_img_w = img.shape[3]
+                for i in range(3):
+                    model(img, augment=opt.augment)[0]
+
+            # Inference
+            t1 = time_synchronized()
+            pred = model(img, augment=opt.augment)[0]
+            t2 = time_synchronized()
+
+            # Apply NMS
+            pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+            t3 = time_synchronized()
+
+            # Apply Classifier
+            if classify:
+                pred = apply_classifier(pred, modelc, img, im0s)
+
+            # Process detections
+            for i, det in enumerate(pred):  # detections per image
+                if webcam:  # batch_size >= 1
+                    p, s, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), dataset.count
+                else:
+                    p, s, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
+
+                p = Path(p)  # to Path
+                save_path = str(save_dir / p.name)  # img.jpg
+                txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
+                gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+                
+                if len(det):
+                    # Rescale boxes from img_size to im0 size
+                    det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+
+                    # Print results
+                    for c in det[:, -1].unique():
+                        n = (det[:, -1] == c).sum()  # detections per class
+                        s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
+
+                    dets_to_sort = np.empty((0,6))
+                    # NOTE: We send in detected object class too
+                    for x1,y1,x2,y2,conf,detclass in det.cpu().detach().numpy():
+                        dets_to_sort = np.vstack((dets_to_sort, 
+                                                np.array([x1, y1, x2, y2, conf, detclass])))
+
+
+                    if opt.track:
+                        
+                        tracked_dets = sort_tracker.update(dets_to_sort, opt.unique_track_color)
+                        tracks = sort_tracker.getTrackers()
+
+                        # draw boxes for visualization
+                        if len(tracked_dets)>0:
+                            bbox_xyxy = tracked_dets[:,:4]
+                            identities = tracked_dets[:, 8]
+                            categories = tracked_dets[:, 4]
+                            confidences = None
+
+                            if opt.show_track:
+                                #loop over tracks
+                                for t, track in enumerate(tracks):
+                                    
+                                    track_color = colors[int(track.detclass)] if not opt.unique_track_color else sort_tracker.color_list[t]
+
+                                    [cv2.line(im0, (int(track.centroidarr[i][0]),
+                                                    int(track.centroidarr[i][1])), 
+                                                    (int(track.centroidarr[i+1][0]),
+                                                    int(track.centroidarr[i+1][1])),
+                                                    track_color, thickness=opt.thickness) 
+                                                    for i,_ in  enumerate(track.centroidarr) 
+                                                        if i < len(track.centroidarr)-1 ] 
+                    else:
+                        bbox_xyxy = dets_to_sort[:,:4]
+                        identities = None
+                        categories = dets_to_sort[:, 5]
+                        confidences = dets_to_sort[:, 4]
+                    
+                    im0 = draw_boxes(im0, bbox_xyxy, identities, categories, confidences, names, colors)
+                    
+                    moves = get_track_length(tracks)
+                    
+                    if df.empty:
+                        df = pd.DataFrame(moves, columns=['ID', 'Length', 'creation_time'])
+                    else:
+                        df = pd.concat([df, pd.DataFrame(moves, columns=['ID', 'Length', 'creation_time'])])
+                    
+                    # 설정된 인터벌마다 DataFrame을 저장하고 새로운 DataFrame 시작
+                    if frame_id % save_interval == 0:
+                        # file_name = datetime.now().strftime('data_%y%m%d_%H%M%S.pkl')  # 파일명 형식 변경
+                        file_path = os.path.splitext(save_path)[0] + datetime.datetime.now().strftime('data_%y%m%d_%H%M.pkl')
+                        # with open(file_path, 'wb') as file:
+                        #     pickle.dump(df, file)
+                        
+                        save_log_data(df, file_path)
+                        
+                        # 초기화
+                        df = pd.DataFrame(columns=['ID', 'Length', 'creation_time'])
+                        frame_id = 0
+
+                    frame_id += 1
+
+                # Print time (inference + NMS)
+                print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
+
+                # Stream results
+                ######################################################
+                if dataset.mode != 'image' and opt.show_fps:
+                    currentTime = time.time()
+
+                    fps = 1/(currentTime - startTime)
+                    startTime = currentTime
+                    cv2.putText(im0, "FPS: " + str(int(fps)), (20, 70), cv2.FONT_HERSHEY_PLAIN, 2, (0,255,0),2)
+
+                #######################################################
+                if view_img:
+                    cv2.imshow(str(p), im0)
+                    cv2.waitKey(1)  # 1 millisecond
+
+                # Save results (image with detections)
+                if save_img:
+                    if dataset.mode == 'image':
+                        cv2.imwrite(save_path, im0)
+                        print(f" The image with the result is saved in: {save_path}")
+                    else:  # 'video' or 'stream'
+                        if vid_path != save_path:  # new video
+                            vid_path = save_path
+                            if isinstance(vid_writer, cv2.VideoWriter):
+                                vid_writer.release()  # release previous video writer
+                            if vid_cap:  # video
+                                fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                                w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            else:  # stream
+                                fps, w, h = 30, im0.shape[1], im0.shape[0]
+                                save_path += '.mp4'
+                            vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+                        vid_writer.write(im0)
+            
+            # 마지막으로 남은 데이터 저장
+            file_path = os.path.splitext(save_path)[0] + datetime.datetime.now().strftime('data_%y%m%d_%H%M.pkl')
+            save_log_data(df, file_path)
+    
+    
+    ######################################################## detect() ########################################################
+    
     source, weights, view_img, save_txt, imgsz, trace = opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, not opt.no_trace
+    
+    # 실시간 웹캠 사용 여부
+    if opt.use_live_camera:
+        source = 'live_camera_' + datetime.datetime.now().strftime("%y%m%d") + '.mp4'
+    
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
+    
+    # 웹캠 사용 여부 확인
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
-        ('rtsp://', 'rtmp://', 'http://', 'https://'))
+        ('rtsp://', 'rtmp://', 'http://', 'https://')) or opt.use_live_camera
+    
+    if opt.use_live_camera:
+        cap = cv2.VideoCapture(0)  # 0 represents the default webcam index
+
+        if cap.isOpened():
+            print("Webcam is connected")
+        else:
+            print("Webcam is not connected")
+            raise "You use --use_live_webcam True, but webcam is not connected!"
+
+        cap.release()
+    
     save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
     
     df = pd.DataFrame(columns=['ID', 'Length', 'creation_time'])
@@ -94,7 +270,7 @@ def detect(save_img=False, frame=30, save_interval_minite=2):
     if webcam:
         view_img = check_imshow()
         cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadStreams(source, img_size=imgsz, stride=stride)
+        dataset = LoadStreams(source, img_size=imgsz, stride=stride, use_live_camera=opt.use_live_camera)
     else:
         dataset = LoadImages(source, img_size=imgsz, stride=stride)
 
@@ -151,6 +327,7 @@ def detect(save_img=False, frame=30, save_interval_minite=2):
             save_path = str(save_dir / p.name)  # img.jpg
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+            
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
@@ -164,7 +341,7 @@ def detect(save_img=False, frame=30, save_interval_minite=2):
                 # NOTE: We send in detected object class too
                 for x1,y1,x2,y2,conf,detclass in det.cpu().detach().numpy():
                     dets_to_sort = np.vstack((dets_to_sort, 
-                                np.array([x1, y1, x2, y2, conf, detclass])))
+                                            np.array([x1, y1, x2, y2, conf, detclass])))
 
 
                 if opt.track:
@@ -214,15 +391,13 @@ def detect(save_img=False, frame=30, save_interval_minite=2):
                     # with open(file_path, 'wb') as file:
                     #     pickle.dump(df, file)
                     
-                    save_log_data_ver2(df, file_path)
+                    save_log_data(df, file_path)
                     
                     # 초기화
                     df = pd.DataFrame(columns=['ID', 'Length', 'creation_time'])
                     frame_id = 0
 
                 frame_id += 1
-                
-                # draw_fig_plot(df)
 
             # Print time (inference + NMS)
             print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
@@ -263,35 +438,21 @@ def detect(save_img=False, frame=30, save_interval_minite=2):
         
         # 마지막으로 남은 데이터 저장
         file_path = os.path.splitext(save_path)[0] + datetime.datetime.now().strftime('data_%y%m%d_%H%M.pkl')
-        save_log_data_ver2(df, file_path)
-        
-        # with open(file_path, 'wb') as file:
-        #     pickle.dump(df, file)
-        
-        # 로그 데이터 저장용
-        # save_log_data(df, save_path)
+        save_log_data(df, file_path)
         
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         
     print(f'Done. ({time.time() - t0:.3f}s)')
 
-def save_log_data_ver2(df, save_path):
+
+
+def save_log_data(df, save_path):
     grouped = df.groupby('creation_time').agg({'ID': list, 'Length': list}).reset_index()
     
     # Open the file in binary mode and save the 'grouped' object as a pickle
     with open(save_path, 'wb') as file:
         pickle.dump(grouped, file)
-    
-# def save_log_data(df, save_path):
-#     grouped = df.groupby('creation_time').agg({'ID': list, 'Length': list}).reset_index()
-    
-#     # Specify the file path where you want to save the pickle file
-#     file_path = os.path.splitext(save_path)[0] + '_log_data.pickle'
-
-#     # Open the file in binary mode and save the 'grouped' object as a pickle
-#     with open(file_path, 'wb') as file:
-#         pickle.dump(grouped, file)
 
 def count_num_fish(bbox_xyxy):
     # 현 프레임에서 탐지된 물고기 수 반환
@@ -362,9 +523,8 @@ if __name__ == '__main__':
     parser.add_argument('--unique-track-color', action='store_true', help='show each track in unique color')
 
     parser.add_argument('--save_log_data', default='./log_data.pickle', help='save log data to pickle file')
-
-    # TODO: 웹캠 사용 여부를 입력받아서 사용할 수 있도록 수정
-    # parser.add_argument('--use_live_camera', default=False, help='use live camera') # 웹캠 사용 여부
+    
+    parser.add_argument('--use_live_camera', default=True, help='use live camera') # 웹캠 사용 여부
 
     opt = parser.parse_args()
     print(opt)

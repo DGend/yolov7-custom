@@ -264,7 +264,7 @@ class LoadWebcam:  # for inference
 
 
 class LoadStreams:  # multiple IP or RTSP cameras
-    def __init__(self, sources='streams.txt', img_size=640, stride=32):
+    def __init__(self, sources='streams.txt', img_size=640, stride=32, use_live_camera=False):
         self.mode = 'stream'
         self.img_size = img_size
         self.stride = stride
@@ -286,7 +286,13 @@ class LoadStreams:  # multiple IP or RTSP cameras
                 check_requirements(('pafy', 'youtube_dl'))
                 import pafy
                 url = pafy.new(url).getbest(preftype="mp4").url
-            cap = cv2.VideoCapture(url)
+            
+            # 실시간 WebCam이라면 채널 0을 통해 연결
+            if use_live_camera:
+                cap = cv2.VideoCapture(0)
+            else:
+                cap = cv2.VideoCapture(url)
+            
             assert cap.isOpened(), f'Failed to open {s}'
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
