@@ -178,7 +178,7 @@ class LoadImages:  # for inference
                     ret_val, img0 = self.cap.read()
 
             self.frame += 1
-            print(f'video {self.count + 1}/{self.nf} ({self.frame}/{self.nframes}) {path}: ', end='')
+            print(f'video {self.count + 1}/{self.nf} ({self.frame}/{self.nframes}) {path}: ', end='\n')
 
         else:
             # Read image
@@ -207,6 +207,7 @@ class LoadImages:  # for inference
 
 class LoadWebcam:  # for inference
     def __init__(self, pipe='0', img_size=640, stride=32):
+        self.mode = 'webcam'
         self.img_size = img_size
         self.stride = stride
 
@@ -264,13 +265,13 @@ class LoadWebcam:  # for inference
 
 
 class LoadStreams:  # multiple IP or RTSP cameras
-    def __init__(self, sources='streams.txt', img_size=640, stride=32, use_live_camera=False):
+    def __init__(self, sources='streams.txt', img_size=640, stride=32):
         self.mode = 'stream'
         self.img_size = img_size
         self.stride = stride
 
         if os.path.isfile(sources):
-            with open(sources, 'r') as f:
+            with open(sources, 'r', encoding='utf-8') as f:
                 sources = [x.strip() for x in f.read().strip().splitlines() if len(x.strip())]
         else:
             sources = [sources]
@@ -284,14 +285,11 @@ class LoadStreams:  # multiple IP or RTSP cameras
             url = eval(s) if s.isnumeric() else s
             if 'youtube.com/' in str(url) or 'youtu.be/' in str(url):  # if source is YouTube video
                 check_requirements(('pafy', 'youtube_dl'))
-                import pafy
+                
                 url = pafy.new(url).getbest(preftype="mp4").url
             
             # 실시간 WebCam이라면 채널 0을 통해 연결
-            if use_live_camera:
-                cap = cv2.VideoCapture(0)
-            else:
-                cap = cv2.VideoCapture(url)
+            cap = cv2.VideoCapture(url)
             
             assert cap.isOpened(), f'Failed to open {s}'
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
