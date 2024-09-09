@@ -265,6 +265,9 @@ class VideoProcessor:
                 return
         else:
             self.run_video()
+        
+        #TODO: plot_html 파일
+        # plot_timeline_ids()
     
     def run_webcam(self):
         if self.opt.use_live_camera:
@@ -878,6 +881,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_live_camera', default=True, help='use live camera') # 웹캠 사용 여부
     
     # TODO: 먹이 급이 설정 추가
+    parser.add_argument('--cutoffood', type=float, default=800.0, help='food') # 먹이 급이 중단 설정
 
     opt = parser.parse_args()
     print(opt)
