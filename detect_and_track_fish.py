@@ -23,9 +23,14 @@ from matplotlib.animation import FuncAnimation
 import datetime
 import pickle
 import datetime
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 import keyboard
+
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+import glob
 
 fig, ax = plt.subplots()
 
@@ -89,6 +94,7 @@ class VideoProcessor:
         
         # 프레임 저장 설정
         self.df = pd.DataFrame(columns=['ID', 'Length', 'creation_time'])
+        self.df_t = None
         self.frame_id = 0
         self.save_interval_minute = save_interval_minute # default: 2분 간격으로 데이터 저장
 
@@ -256,6 +262,114 @@ class VideoProcessor:
                 self.vid_writer = cv2.VideoWriter(_save_path, cv2.VideoWriter_fourcc(*'X264'), fps, (w, h))
             self.vid_writer.write(im0)
 
+    def exponential_smoothing(self, total_length_per_time, alpha=0.2):
+        """
+        Args:
+            total_length_per_time (pd.DataFrame): 데이터
+            alpha (float): 스무딩 계수, default=0.2 (0.0~1.0)
+
+        Returns:
+            pd.Serial: 스무딩된 데이터
+        """
+        
+        result = pd.Series(index=total_length_per_time.index)
+        result.iloc[0] = total_length_per_time.iloc[0]  # Initial prediction is the first data point
+
+        for t in range(1, len(total_length_per_time)):
+            result.iloc[t] = alpha * total_length_per_time.iloc[t] + (1 - alpha) * result.iloc[t - 1]
+
+        return result
+
+    def moving_average(self, total_length_per_time, window_size=10):
+        """
+        Args:
+            total_length_per_time (pd.DataFrame): 데이터
+            window_size (int): 이동 평균 창 크기, default=10
+
+        Returns:
+            pd.Serial: 이동 평균 데이터
+        """
+        moving_avg = total_length_per_time.rolling(window=window_size).mean()
+        return moving_avg
+
+    def triple_exponential_smoothing(self, total_length_per_time, alpha=0.1, beta=0.2, gamma=0.2, seasonality_period=2):
+        """
+        Args:
+            total_length_per_time (pd.DataFrame): 데이터
+            alpha (float): 스무딩 계수, default=0.1 (0.0~1.0)
+            beta (float): default=0.2 (0.0~1.0)
+            gamma (float): default=0.2 (0.0~1.0)
+            seasonality_period (int): default=2 
+
+        Returns:
+            pd.Serial: 이동 평균 데이터
+        """
+        result = pd.Series(index=total_length_per_time.index)
+        result.iloc[0] = total_length_per_time.iloc[0]  # Initial prediction is the first data point
+
+        # Initialize level, trend, and seasonal components
+        level = total_length_per_time.iloc[0]
+        trend = total_length_per_time.iloc[1] - total_length_per_time.iloc[0]
+        seasonal = [total_length_per_time.iloc[i] - total_length_per_time.iloc[i - seasonality_period] for i in range(seasonality_period)]
+
+        for t in range(1, len(total_length_per_time)):
+            if t >= seasonality_period:
+                # Update level
+                prev_level = level
+                level = alpha * (total_length_per_time.iloc[t] - seasonal[t % seasonality_period]) + (1 - alpha) * (prev_level + trend)
+
+                # Update trend
+                prev_trend = trend
+                trend = beta * (level - prev_level) + (1 - beta) * prev_trend
+
+                # Update seasonal component
+                seasonal[t % seasonality_period] = gamma * (total_length_per_time.iloc[t] - level) + (1 - gamma) * seasonal[t % seasonality_period]
+
+            # Calculate forecast
+            result.iloc[t] = level + trend + seasonal[t % seasonality_period]
+
+        return result
+
+    # Define the calculate_metric function here
+    def calculate_metric(self, total_length_per_time, smoothed_data):
+        """
+        Calculate the performance metric between the original data and the smoothed data.
+
+        Args:
+            total_length_per_time (pd.Series): Original data
+            smoothed_data (pd.Series): Smoothed data
+
+        Returns:
+            float: Performance metric
+        """
+        # Calculate the mean squared error between the original data and the smoothed data
+        mse = ((total_length_per_time - smoothed_data) ** 2).mean()
+
+        return mse
+
+    def validate_threshold(self, total_length_per_time, alpha_range, beta_range, gamma_range, seasonality_period):
+        best_threshold = None
+
+        best_metric = float('-inf')
+
+        # for alpha in tqdm(alpha_range, desc="Alpha"):
+        #     for beta in tqdm(beta_range, desc="Beta"):
+        for alpha in alpha_range:
+            for beta in beta_range:
+                for gamma in gamma_range:
+                    # Apply triple exponential smoothing with the current parameters
+                    smoothed_data = self.triple_exponential_smoothing(total_length_per_time, alpha, beta, gamma, seasonality_period)
+
+                    # Calculate the performance metric (e.g., mean squared error)
+                    metric= self.calculate_metric(total_length_per_time, smoothed_data)
+
+                    # Update the best threshold and metric if necessary
+                    if metric > best_metric:
+                        best_metric = metric
+                        best_threshold = (alpha, beta, gamma)
+
+        return best_threshold, best_metric, smoothed_data.mean()
+
     def run(self):
         if self.check_webcam():
             if self.opt.use_live_camera:
@@ -266,9 +380,115 @@ class VideoProcessor:
         else:
             self.run_video()
         
-        #TODO: plot_html 파일
-        # plot_timeline_ids()
+    # TODO: 함수 실행 과정에서 경로의 pkl 파일을 찾을 수 없는 오류 발생
+    def plot_timeline_ids(self, save_path, show_html=True):
+        print(f"Load {save_path}...")
+        
+        # Get a list of .pkl file paths in the directory
+        file_paths = glob.glob(save_path + '/*.pkl')
+        
+        #pkl 파일을 찾지 못할시 오류 출력과 함께 프로그램 종료
+        if not file_paths:
+          print(f"No .pkl files found in {save_path}")
+          return
     
+        # Read each .pkl file and store the dataframes in a list
+        df = pd.read_pickle(file_paths[0])
+        for file_path in file_paths[1:]:
+            print(f"read {file_path} file.")
+            df = pd.concat([df, pd.read_pickle(file_path)], ignore_index=True)
+
+        # 서브플롯 설정
+        fig = make_subplots(rows=2, cols=1, 
+                            subplot_titles=("Total Length by Time", "Length per ID at Selected Time"))
+
+        # 첫 번째 행에 총합 데이터 플롯
+        total_length_per_time = df.explode('Length').groupby('creation_time')['Length'].sum()
+        fig.add_trace(
+            go.Scatter(x=total_length_per_time.index, y=total_length_per_time.values, mode='lines+markers'),
+            row=1, col=1
+        )
+
+        # 모든 시간에 대한 데이터 트레이스 추가 (초기에 숨김)
+        for i, row in tqdm(df.iterrows(), total=len(df), desc="(1/4)Add traces..."):
+            fig.add_trace(
+                go.Bar(x=row['ID'], y=row['Length'], visible=False, marker=dict(color=row['ID'])),
+                row=2, col=1
+            )
+
+        # 슬라이더로 현재 시간 선택
+        steps = []
+        for i, time in enumerate(tqdm(df['creation_time'], desc="(2/4)Draw ploting...")):
+            step = dict(
+                method="update",
+                args=[{"visible": [True] * len(fig.data)},
+                    {"title": f"Selected time: {time}"}],
+                label=str(time)
+            )
+            # 첫 번째 행의 라인을 제외하고 모든 트레이스 숨기기
+            for j in range(len(fig.data)):
+                step["args"][0]["visible"][j] = j == 0 or j == i+1  # 첫 번째 트레이스 항상 보임, 해당 시간의 바 차트만 보임
+            steps.append(step)
+
+        # 슬라이더 추가
+        sliders = [dict(
+            active=0,
+            currentvalue={"prefix": "Selected Time: "},
+            steps=steps,
+            x=0,  # 슬라이더의 x 위치
+            xanchor="left",
+            len=1.0,  # 슬라이더의 길이
+            y=0.45,  # 슬라이더의 y 위치, 그래프와 분리
+            yanchor="bottom"
+        )]
+        
+        # 그래프 레이아웃 업데이트
+        fig.update_layout(
+            sliders=sliders,
+            height=900
+        )
+
+        # 초기 상태 설정
+        fig.data[1].visible = True  # 첫 번째 데이터 세트를 보이도록 설정
+
+        
+        print("(3/4)Plotting...")
+
+        # 그래프 출력
+        if show_html:
+            fig.write_html("timeline_ids_test.html")  # HTML 파일로 출력
+        else:
+            fig.show()  # Jupyter Notebook에서 실행
+        
+        print("(4/4)Done.")
+
+    def feed_supply(self, df):
+        """
+        best_smoothed_data와 cutoffood의 비교값 반환
+        Args:
+            best_smoothed_data: triple_exponential_smoothing 함수를 사용한 평균 값이 가장 큰 smoothed_data 
+        Returns:
+            Bool: True or Flase
+        """
+        # Define the ranges for alpha, beta, gamma
+        alpha_range = [random.uniform(0.1, 0.3) for _ in range(10)]
+        beta_range = [random.uniform(0.2, 0.6) for _ in range(10)]
+        gamma_range = [random.uniform(0.2, 0.6) for _ in range(10)]
+
+        # total_length_per_time 계산
+        total_length_per_time = df.explode('Length').groupby('creation_time')['Length'].sum()
+
+        # 최적의 smoothed_data 저장 변수
+        best_smoothed_data = max(
+            (self.triple_exponential_smoothing(total_length_per_time, alpha, beta, gamma, 2) 
+            for alpha, beta, gamma in zip(alpha_range, beta_range, gamma_range)),
+            key=lambda x: x.mean() if not x.empty else float('-inf'),
+            default=None
+        )
+
+        # smoothed_data가 비어있지 않으면 평균과 cutoffood 비교
+        return best_smoothed_data is None or best_smoothed_data.empty or best_smoothed_data.mean() > self.opt.cutoffood
+
     def run_webcam(self):
         if self.opt.use_live_camera:
             self.source = 'live_camera_' + datetime.datetime.now().strftime("%y%m%d") + '.mp4'
@@ -283,6 +503,8 @@ class VideoProcessor:
             p = os.path.splitext(Path(path).name)[0]
             save_path = str(self.save_dir / p)
             
+            feed_bool = self.feed_supply(self.df)
+
             # Process results and save data
             self.save_data(save_path)
 
@@ -304,31 +526,62 @@ class VideoProcessor:
                 break
         
         self.vid_writer.release()
-    
+
+        self.plot_timeline_ids(save_path)
+
     def run_video(self):
+        """
+        입력이 영상일 때 feed_supply 함수를 통해 실시간 True or False를 출력하는 코드 
+        데이터프레임의 최대 행(max_rows)을 초과할 경우 최근 데이터만 유지
+        """
         if not self.opt.nosave:
             (self.save_dir / 'labels' if self.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
         
+        max_rows = 1000
+        df_all = pd.DataFrame(columns=['ID','Length', 'creation_time'])  # 전체 데이터프레임 초기화
+
         for path, img, im0s, vid_cap in self.dataset:
+            # 이미지 및 예측 처리
             pred, img = self.process_frame(img)
             pred, _im0s = self.process_detections(pred, img.shape[2:], sort_tracker, im0s)
-            
-            p = os.path.splitext(Path(path).name)[0]
-            save_path = str(self.save_dir / p)  # img.jpg
-            
-            # Process results and save data
-            self.save_data(save_path)
 
-            # Display or save the output
+            # 저장 경로 설정
+            p = os.path.splitext(Path(path).name)[0]
+            save_path = str(self.save_dir / p)
+
+            # 데이터 저장 및 출력 처리
+            self.save_data(save_path)
             self.show_stream(_im0s)
-            
+
             if self.save_img:
                 self.save_result(_im0s, vid_cap, save_path)
 
             self.frame_id += 1
-        
+
+            # 프레임 데이터 추가
+            df_copy = self.df.copy()
+
+            # 필요한 열이 없는 경우 추가
+            df_copy = df_copy.reindex(columns=['ID','Length', 'creation_time'], fill_value=None)
+            df_all = pd.concat([df_all, df_copy], ignore_index=True)
+
+            # 최대 행 수를 초과하는 경우 최근 데이터 유지
+            if len(df_all) > max_rows:
+                df_all = df_all.tail(max_rows)
+
+            # 데이터 처리
+            if not df_all.empty:
+                try:
+                    feed_bool = self.feed_supply(df_all)
+                    print(df_all)
+                    print(feed_bool)
+                except Exception as e:
+                    print(f"Error in feed_supply: {e}")
+        # 비디오 저장 종료
         self.vid_writer.release()
-    
+        self.plot_timeline_ids(save_path)
+
+
     def get_track_length(self, tracks):
         infos = []
         
@@ -878,7 +1131,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--save_log_data', default='./log_data.pickle', help='save log data to pickle file')
     
-    parser.add_argument('--use_live_camera', default=True, help='use live camera') # 웹캠 사용 여부
+    parser.add_argument('--use_live_camera', default=False, help='use live camera') # 웹캠 사용 여부
     
     # TODO: 먹이 급이 설정 추가
     parser.add_argument('--cutoffood', type=float, default=800.0, help='food') # 먹이 급이 중단 설정
