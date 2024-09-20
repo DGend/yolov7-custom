@@ -249,7 +249,7 @@ class LoadWebcam:  # for inference
         # Print
         assert ret_val, f'Camera Error {self.pipe}'
         img_path = 'webcam.jpg'
-        print(f'webcam {self.count}: ', end='')
+        # print(f'webcam {self.count}: ', end='')
 
         # Padded resize
         img = letterbox(img0, self.img_size, stride=self.stride)[0]
