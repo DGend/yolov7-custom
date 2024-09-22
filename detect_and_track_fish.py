@@ -680,7 +680,6 @@ class VideoProcessor:
                     self.max_feed_count[self.stop_feed_count] = 1
                 else:
                     self.max_feed_count[self.stop_feed_count] += 1
-                    
                 
                 # 먹이 급이 중단 요소 가운데 한 가지라도 충족하지 못한 경우
                 self.stop_feed_count = 0
