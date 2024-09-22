@@ -19,7 +19,6 @@ import pickle
 from pathlib import Path
 import matplotlib.pyplot as plt
 from collections import deque
-import threading
 
 
 # 인터페이스 정의
@@ -319,7 +318,7 @@ class DataAnalyzer(IDataAnalyzer):
 
         return result
     
-    def stop_feed_supply(self, df:pd.DataFrame, window_size:int=10, alpha:float=0.2, beta:float=0.2, gamma:float=0.2, period:int=2, consecutive_max_count=20):
+    def stop_feed_supply(self, df:pd.DataFrame, window_size:int=10, alpha:float=0.2, beta:float=0.2, gamma:float=0.2, period:int=2, consecutive_max_count=50):
         """데이터 분석을 통해 먹이 공급 중단 여부를 결정합니다.
         Args:
         @param df 데이터프레임
@@ -328,6 +327,7 @@ class DataAnalyzer(IDataAnalyzer):
         @param beta 추세 평활화 계수
         @param gamma  평활화 계수
         @param period triple_exponential_smoothing 주기
+        @param consecutive_max_count 급이 중단 기준이되는 연속 최대 카운트
 
         Returns:
         @return 먹이 공급 중단 여부 (True 또는 False).
@@ -350,7 +350,7 @@ class DataAnalyzer(IDataAnalyzer):
         current_time = total_length_per_time.index[-1]
 
         # 현재 값이 세 가지 스무딩 값보다 모두 작은지 확인
-        if current_value < ma_value and current_value < es_value and current_value < tes_value:
+        if (current_value < ma_value) and (current_value < es_value) and (current_value < tes_value):
             # 연속 낮은 값 카운터 증가
             self.consecutive_low_count += 1
         else:
@@ -359,6 +359,8 @@ class DataAnalyzer(IDataAnalyzer):
 
         # 카운터가 consecutive_max_count 이상이면 True 반환
         stop_feed = self.consecutive_low_count >= consecutive_max_count
+
+        print(f"consecutive_low_count: {self.consecutive_low_count}")
 
         return stop_feed, current_time, current_value, ma_value, es_value, tes_value
 
@@ -636,7 +638,7 @@ class VideoProcessor:
             self.frame_id += 1
 
             # 먹이 공급 중단 여부 확인 및 값 받아오기
-            stop_feed_supply, current_time, current_value, ma_value, es_value, tes_value = self.analyzer.stop_feed_supply(self.df)
+            stop_feed_supply, current_time, current_value, ma_value, es_value, tes_value = self.analyzer.stop_feed_supply(self.df, consecutive_max_count=20)
             
             if current_time is not None:
                 graph_visualizer.update(current_time, current_value, ma_value, es_value, tes_value)
@@ -657,7 +659,7 @@ class VideoProcessor:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='halibut_ver2.pt', help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='data/data/Infrared/feed_original.mp4', help='source')
+    parser.add_argument('--source', type=str, default='data/data/Infrared/feed_summery.mp4', help='source')
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
