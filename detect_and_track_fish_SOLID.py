@@ -333,7 +333,7 @@ class DataAnalyzer(IDataAnalyzer):
         @return 먹이 공급 중단 여부 (True 또는 False).
         """
         if df.empty:
-            return False
+            return False, None, None, None, None, None
 
         total_length_per_time = df.groupby('creation_time')['Length'].sum()
 
@@ -492,7 +492,7 @@ class VideoVisualizer(IVisualizer):
         if self.opt.view_img:
             # 윈도우 이름을 지정하고 WINDOW_NORMAL 속성 설정
             cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
-            cv2.imshow('', self.im0)
+            cv2.imshow('Video', self.im0)
 
 
 # VideoProcessor 클래스 재설계
@@ -657,7 +657,7 @@ class VideoProcessor:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='halibut_ver2.pt', help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='data/data/Infrared/feed_summery_20sec.mp4', help='source')
+    parser.add_argument('--source', type=str, default='data/data/Infrared/feed_original.mp4', help='source')
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
