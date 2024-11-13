@@ -142,11 +142,10 @@ class ModelLoader(IModelLoader):
         model = attempt_load(self.weights, map_location=self.device)
         stride = int(model.stride.max())
         imgsz = check_img_size(self.img_size, s=stride)
-        
-        # 모델 트레이싱
-        model = TracedModel(model, self.device, imgsz)
-        model.half() # FP16 모드로 변경
-        
+        if not self.no_trace:
+            model = TracedModel(model, self.device, imgsz)
+        if self.device.type != 'cpu':
+            model.half()
         return model, stride, imgsz
 
 class VideoDataLoader(IDataLoader):
@@ -389,7 +388,7 @@ class DataSaver(IDataSaver):
             pickle.dump(data, file)
 
 class GraphVisualizer(IVisualizer):
-    """데이터 시각화를 담당하는 클래스."""
+    """그래프를 시각화하는 클래스."""
     def __init__(self):
         """Visualizer를 초기화합니다."""
         # 데이터 저장을 위한 deque 객체 생성
@@ -448,6 +447,7 @@ class GraphVisualizer(IVisualizer):
         plt.pause(0.001)
 
 class VideoVisualizer(IVisualizer):
+    """비디오를 시각화하는 클래스."""
     # Bounding Box를 그리는 유틸리티 함수
     @staticmethod
     def draw_boxes(img, bbox, identities=None, categories=None, confidences=None, names=None, colors=None, opt=None):

@@ -268,3 +268,5 @@ data/
 *.yaml
 
 evolve.txt
+
+*.zip
